@@ -1,0 +1,86 @@
+# Translation of Odoo Server.
+# This file contains the translation of the following modules:
+# * microcom_tasks
+#
+# Translators:
+msgid ""
+msgstr ""
+"Project-Id-Version: Odoo 9.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2015-10-05 11:22+0000\n"
+"PO-Revision-Date: 2015-10-21 10:37+0000\n"
+"Last-Translator: Marc-Etienne Leblanc\n"
+"Language-Team: French\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: \n"
+"Language: fr\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+
+#. module: microcom_tasks
+#: model:ir.ui.view,arch_db:microcom_tasks.view_task_tree2
+msgid "Creation Date"
+msgstr "Date de création"
+
+#. module: microcom_tasks
+#: selection:project.task,priority:0
+#: selection:report.project.task.user,priority:0
+msgid "High"
+msgstr "Urgent"
+
+#. module: microcom_tasks
+#: selection:project.task,priority:0
+#: selection:report.project.task.user,priority:0
+msgid "Low"
+msgstr "Basse"
+
+#. module: microcom_tasks
+#: selection:project.task,priority:0
+#: selection:report.project.task.user,priority:0
+msgid "Nice to have"
+msgstr "À temps perdu"
+
+#. module: microcom_tasks
+#: selection:project.task,priority:0
+#: selection:report.project.task.user,priority:0
+msgid "None"
+msgstr "Aucune"
+
+#. module: microcom_tasks
+#: code:addons/microcom_tasks/project.py:10
+#, python-format
+msgid "Normal"
+msgstr "Normal"
+
+#. module: microcom_tasks
+#: code:addons/microcom_tasks/project.py:9
+#, python-format
+msgid "Planned"
+msgstr "Planifié"
+
+#. module: project
+#: model:ir.model.fields,field_description:project.field_project_task_planned_hours
+msgid "Planned"
+msgstr "Planifié"
+
+#. module: microcom_tasks
+#: model:ir.ui.view,arch_db:microcom_tasks.view_task_tree2
+msgid "State"
+msgstr "État"
+
+#. module: microcom_tasks
+#: model:ir.model,name:microcom_tasks.model_project_task
+msgid "Task"
+msgstr "Tâche"
+
+#. module: microcom_task
+#: selection:project.task,priority:0
+#: selection:report.project.task.user,priority:0
+msgid "Very High"
+msgstr "Urgence extrême"
+
+#. module: microcom_tasks
+#: code:addons/microcom_task/task.py:19
+#, python-format
+msgid "You must specify a task priority in order to change the task's stage."
+msgstr "Vous devez attribuer une priorité à la tâche avant de changer son état."

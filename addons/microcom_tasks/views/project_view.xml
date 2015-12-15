@@ -1,0 +1,57 @@
+<?xml version="1.0"?>
+<openerp>
+    <data>
+        <record id="view_task_tree2" model="ir.ui.view">
+            <field name="name">project.task.tree.inherit_mic</field>
+            <field name="model">project.task</field>
+            <field name="inherit_id" ref="project.view_task_tree2"/>
+            <field name="arch" type="xml">
+                <field name="project_id" position="replace"/>
+                <field name="stage_id" position="replace"/>
+                <field name="sequence" position="after">
+                    <field name="id"></field>
+                    <field name="project_id" invisible="context.get('user_invisible', False)" colspan="50"/>
+                </field>
+                <field name="name" position="after">
+                    <field name="priority"/>
+                    <field name="stage_id" invisible="context.get('set_visible',False)"/>
+                    <field name="kanban_state" string="State"/>
+                    <field name="planned_hours" invisible="context.get('set_visible',False)"/>
+                </field>
+                <field name="user_id" position="after">
+                    <field name="create_date" string="Creation Date"></field>
+                </field>
+            </field>
+        </record>
+
+        <record id="project.view_task_form2_inherited" model="ir.ui.view">
+            <field name="name">project.task.form.inherited</field>
+            <field name="model">project.task</field>
+            <field name="inherit_id" ref="project.view_task_form2"/>
+            <field name="groups_id" eval="[(6, 0, [])]"/>
+            <field name="arch" type="xml">
+                <xpath expr="//field[@name='priority']" position="replace">
+
+                </xpath>
+                <field name="date_deadline" position="after">
+                    <field name="priority" widget="priority" readonly="1"/>
+                </field>
+                <field name="date_deadline" position="before">
+                    <field name="planned_hours"></field>
+                </field>
+            </field>
+        </record>
+
+        <record id="project.view_task_form2_manager_inherited" model="ir.ui.view">
+            <field name="name">project.task.form.manager.inherited</field>
+            <field name="model">project.task</field>
+            <field name="inherit_id" ref="project.view_task_form2_inherited"/>
+            <field name="groups_id" eval="[(6, 0, [ref('project.group_project_manager')])]"/>
+            <field name="arch" type="xml">
+                <xpath expr="//field[@name='priority']" position="attributes">
+                    <attribute name="readonly">0</attribute>
+                </xpath>
+            </field>
+        </record>
+    </data>
+</openerp>

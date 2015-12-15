@@ -1,0 +1,2 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_microcom_task_microcom_task,microcom_task.microcom_task,model_microcom_task_microcom_task,,1,0,0,0
