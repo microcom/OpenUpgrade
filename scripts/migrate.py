@@ -68,8 +68,10 @@ migrations = {
         },
         'server': {
             'type': 'git',
-            'url': 'git://github.com/OpenUpgrade/OpenUpgrade.git',
-            'branch': '9.0',
+            'url': 'git@github.com:microcom/OpenUpgrade.git',
+            'branch': '9.0-base-hacked',
+            # 'url': 'git://github.com/OpenUpgrade/OpenUpgrade.git',
+            # 'branch': '9.0',
             'addons_dir': os.path.join('openerp', 'addons'),
             'root_dir': os.path.join(''),
             'cmd': 'openerp-server --update=all --database=%(db)s '
@@ -384,7 +386,8 @@ for version in options.migrations.split(','):
         open(
             os.path.join(options.branch_dir, version, 'server.cfg'), 'w+'))
 
-    os.system(
+    # os.system(
+    print(
         os.path.join(
             options.branch_dir,
             version,
