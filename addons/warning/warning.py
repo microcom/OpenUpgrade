@@ -97,6 +97,7 @@ class purchase_order(osv.Model):
                 'message': message
                 }
             if partner.purchase_warn == 'block':
+                self.update({'partner_id': False})
                 return {'warning': warning}
 
         if warning:
@@ -195,7 +196,7 @@ class sale_order_line(osv.osv):
             fiscal_position_id=False, flag=False, warehouse_id=False, context=None):
         warning = {}
         if not product:
-            return {'value': {'th_weight' : 0, 'product_packaging': False,
+            return {'value': {'product_packaging': False,
                 'product_uom_qty': qty}, 'domain': {'product_uom': [],
                    'product_uom': []}}
         product_obj = self.pool.get('product.product')
@@ -218,6 +219,29 @@ class sale_order_line(osv.osv):
         if result.get('warning',False):
             warning['title'] = title and title +' & '+result['warning']['title'] or result['warning']['title']
             warning['message'] = message and message +'\n\n'+result['warning']['message'] or result['warning']['message']
+
+        if warning:
+            result['warning'] = warning
+        return result
+
+    @api.onchange('product_id')
+    def onchange_product_id_warning(self):
+        if not self.product_id:
+            return
+        result = {}
+        warning = {}
+        title = False
+        message = False
+
+        product_info = self.product_id
+
+        if product_info.sale_line_warn != 'no-message':
+            title = _("Warning for %s") % product_info.name
+            message = product_info.sale_line_warn_msg
+            warning['title'] = title
+            warning['message'] = message
+            if product_info.sale_line_warn == 'block':
+                return {'warning': warning}
 
         if warning:
             result['warning'] = warning

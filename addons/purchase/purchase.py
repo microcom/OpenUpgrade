@@ -3,7 +3,7 @@
 
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
-from openerp import api, fields, models, _
+from openerp import api, fields, models, _, SUPERUSER_ID
 from openerp.tools import DEFAULT_SERVER_DATETIME_FORMAT
 from openerp.tools.translate import _
 from openerp.tools.float_utils import float_is_zero, float_compare
@@ -75,7 +75,7 @@ class PurchaseOrder(models.Model):
         types = type_obj.search([('code', '=', 'incoming'), ('warehouse_id.company_id', '=', company_id)])
         if not types:
             types = type_obj.search([('code', '=', 'incoming'), ('warehouse_id', '=', False)])
-        return types[0].id if types else False
+        return types[:1]
 
     @api.depends('order_line.move_ids.picking_id')
     def _compute_picking(self):
@@ -102,7 +102,7 @@ class PurchaseOrder(models.Model):
              "It's used to do the matching when you receive the "
              "products as this reference is usually written on the "
              "delivery order sent by your vendor.")
-    date_order = fields.Datetime('Order Date', required=True, states=READONLY_STATES, select=True, copy=False, default=fields.Datetime.now(),\
+    date_order = fields.Datetime('Order Date', required=True, states=READONLY_STATES, select=True, copy=False, default=fields.Datetime.now,\
         help="Depicts the date where the Quotation should be validated and converted into a purchase order.")
     date_approve = fields.Date('Approval Date', readonly=1, select=True, copy=False)
     partner_id = fields.Many2one('res.partner', string='Vendor', required=True, states=READONLY_STATES, change_default=True, track_visibility='always')
@@ -149,6 +149,8 @@ class PurchaseOrder(models.Model):
 
     picking_type_id = fields.Many2one('stock.picking.type', 'Deliver To', states=READONLY_STATES, required=True, default=_default_picking_type,\
         help="This will determine picking type of incoming shipment")
+    default_location_dest_id_usage = fields.Selection(related='picking_type_id.default_location_dest_id.usage', string='Destination Location Type',\
+        help="Technical field used to display the Drop Ship Address", readonly=True)
     group_id = fields.Many2one('procurement.group', string="Procurement Group")
 
     @api.model
@@ -180,7 +182,7 @@ class PurchaseOrder(models.Model):
     @api.multi
     def unlink(self):
         for order in self:
-            if order.state not in ['draft', 'cancel']:
+            if not order.state == 'cancel':
                 raise UserError(_('In order to delete a purchase order, you must cancel it first.'))
         return super(PurchaseOrder, self).unlink()
 
@@ -206,6 +208,11 @@ class PurchaseOrder(models.Model):
             self.payment_term_id = self.partner_id.property_supplier_payment_term_id.id
             self.currency_id = self.partner_id.property_purchase_currency_id.id or self.env.user.company_id.currency_id.id
         return {}
+
+    @api.onchange('picking_type_id')
+    def _onchange_picking_type_id(self):
+        if self.picking_type_id.default_location_dest_id.usage != 'customer':
+            self.dest_address_id = False
 
     @api.multi
     def action_rfq_send(self):
@@ -326,12 +333,12 @@ class PurchaseOrder(models.Model):
     @api.multi
     def _create_picking(self):
         for order in self:
-            ptypes = order.order_line.mapped('product_id.type')
-            if ('product' in ptypes) or ('consu' in ptypes):
+            if any([ptype in ['product', 'consu'] for ptype in order.order_line.mapped('product_id.type')]):
                 res = order._prepare_picking()
                 picking = self.env['stock.picking'].create(res)
-                moves = order.order_line._create_stock_moves(picking)
-                moves.action_confirm()
+                moves = order.order_line.filtered(lambda r: r.product_id.type in ['product', 'consu'])._create_stock_moves(picking)
+                move_ids = moves.action_confirm()
+                moves = self.env['stock.move'].browse(move_ids)
                 moves.force_assign()
         return True
 
@@ -391,15 +398,28 @@ class PurchaseOrder(models.Model):
 
         #override the context to get rid of the default filtering
         result['context'] = {'type': 'in_invoice', 'default_purchase_id': self.id}
-        result['domain'] = "[('purchase_id', '=', %s)]" % self.id
-        invoice_ids = sum([order.invoice_ids.ids for order in self], [])
+
+        if not self.invoice_ids:
+            # Choose a default account journal in the same currency in case a new invoice is created
+            journal_domain = [
+                ('type', '=', 'purchase'),
+                ('company_id', '=', self.company_id.id),
+                ('currency_id', '=', self.currency_id.id),
+            ]
+            default_journal_id = self.env['account.journal'].search(journal_domain, limit=1)
+            if default_journal_id:
+                result['context']['default_journal_id'] = default_journal_id.id
+        else:
+            # Use the same account journal than a previous invoice
+            result['context']['default_journal_id'] = self.invoice_ids[0].journal_id.id
+
         #choose the view_mode accordingly
-        if len(invoice_ids) > 1:
-            result['domain'] = "[('id','in',[" + ','.join(map(str, invoice_ids)) + "])]"
-        elif len(invoice_ids) == 1:
+        if len(self.invoice_ids) != 1:
+            result['domain'] = "[('id', 'in', " + str(self.invoice_ids.ids) + ")]"
+        elif len(self.invoice_ids) == 1:
             res = self.env.ref('account.invoice_supplier_form', False)
             result['views'] = [(res and res.id or False, 'form')]
-            result['res_id'] = invoice_ids and invoice_ids[0] or False
+            result['res_id'] = self.invoice_ids.id
         return result
 
 
@@ -427,6 +447,7 @@ class PurchaseOrderLine(models.Model):
 
     @api.depends('order_id.state', 'move_ids.state')
     def _compute_qty_received(self):
+        productuom = self.env['product.uom']
         for line in self:
             if line.order_id.state not in ['purchase', 'done']:
                 line.qty_received = 0.0
@@ -434,14 +455,51 @@ class PurchaseOrderLine(models.Model):
             if line.product_id.type not in ['consu', 'product']:
                 line.qty_received = line.product_qty
                 continue
-            total = 0.0
-            for move in line.move_ids:
-                if move.state == 'done':
-                    total += move.product_qty
+            bom_delivered = self.sudo()._get_bom_delivered(line.sudo())
+            if bom_delivered and any(bom_delivered.values()):
+                total = line.product_qty
+            elif bom_delivered:
+                total = 0.0
+            else:
+                total = 0.0
+                for move in line.move_ids:
+                    if move.state == 'done':
+                        if move.product_uom != line.product_uom:
+                            total += productuom._compute_qty_obj(move.product_uom, move.product_uom_qty, line.product_uom)
+                        else:
+                            total += move.product_uom_qty
             line.qty_received = total
 
+    def _get_bom_delivered(self, line):
+        precision = self.env['decimal.precision'].precision_get('Product Unit of Measure')
+        bom_delivered = {}
+        # There is no dependencies between purchase and mrp
+        if 'mrp.bom' in self.env:
+            # In the case of a kit, we need to check if all components are shipped. We use a all or
+            # nothing policy. A product can have several BoMs, we don't know which one was used when the
+            # delivery was created.
+            for bom in line.product_id.product_tmpl_id.bom_ids:
+                if bom.type != 'phantom':
+                    continue
+                bom_delivered[bom.id] = False
+                product_uom_qty_bom = self.env['product.uom']._compute_qty_obj(line.product_uom, line.product_qty, bom.product_uom)
+                bom_exploded = self.env['mrp.bom']._bom_explode(bom, line.product_id, product_uom_qty_bom)[0]
+                for bom_line in bom_exploded:
+                    qty = 0.0
+                    for move in line.move_ids:
+                        if move.state == 'done' and move.product_id.id == bom_line.get('product_id', False):
+                            qty += self.env['product.uom']._compute_qty(move.product_uom.id, move.product_uom_qty, bom_line['product_uom'])
+                    if float_compare(qty, bom_line['product_qty'], precision_digits=precision) < 0:
+                        bom_delivered[bom.id] = False
+                        break
+                    else:
+                        bom_delivered[bom.id] = True
+        return bom_delivered
+
+
+
     name = fields.Text(string='Description', required=True)
-    product_qty = fields.Float(string='Quantity', digits=dp.get_precision('Product Unit of Measure'), required=True, default=1.0)
+    product_qty = fields.Float(string='Quantity', digits=dp.get_precision('Product Unit of Measure'), required=True)
     date_planned = fields.Datetime(string='Scheduled Date', required=True, select=True)
     taxes_id = fields.Many2many('account.tax', string='Taxes')
     product_uom = fields.Many2one('product.uom', string='Product Unit of Measure', required=True)
@@ -454,7 +512,7 @@ class PurchaseOrderLine(models.Model):
     price_tax = fields.Monetary(compute='_compute_amount', string='Tax', store=True)
 
     order_id = fields.Many2one('purchase.order', string='Order Reference', select=True, required=True, ondelete='cascade')
-    account_analytic_id = fields.Many2one('account.analytic.account', string='Analytic Account')
+    account_analytic_id = fields.Many2one('account.analytic.account', string='Analytic Account', domain=[('account_type', '=', 'normal')])
     company_id = fields.Many2one('res.company', related='order_id.company_id', string='Company', store=True, readonly=True)
     state = fields.Selection(related='order_id.state', stored=True)
 
@@ -529,7 +587,8 @@ class PurchaseOrderLine(models.Model):
         for line in self:
             if line.order_id.state in ['approved', 'done']:
                 raise UserError(_('Cannot delete a purchase order line which is in state \'%s\'.') %(line.state,))
-            line.procurement_ids.message_post(body=_('Purchase order line deleted.'))
+            for proc in line.procurement_ids:
+                proc.message_post(body=_('Purchase order line deleted.'))
             line.procurement_ids.write({'state': 'exception'})
         return super(PurchaseOrderLine, self).unlink()
 
@@ -552,14 +611,16 @@ class PurchaseOrderLine(models.Model):
         else:
             return datetime.today() + relativedelta(days=seller.delay if seller else 0)
 
-    @api.onchange('product_id', 'product_qty', 'product_uom')
+    @api.onchange('product_id')
     def onchange_product_id(self):
         result = {}
         if not self.product_id:
             return result
 
-        if self.product_id.uom_id.category_id.id != self.product_uom.category_id.id:
-            self.product_uom = self.product_id.uom_po_id
+        # Reset date, price and quantity since _onchange_quantity will provide default values
+        self.date_planned = datetime.today().strftime(DEFAULT_SERVER_DATETIME_FORMAT)
+        self.price_unit = self.product_qty = 0.0
+        self.product_uom = self.product_id.uom_po_id or self.product_id.uom_id
         result['domain'] = {'product_uom': [('category_id', '=', self.product_id.uom_id.category_id.id)]}
 
         product_lang = self.product_id.with_context({
@@ -569,6 +630,23 @@ class PurchaseOrderLine(models.Model):
         self.name = product_lang.display_name
         if product_lang.description_purchase:
             self.name += '\n' + product_lang.description_purchase
+
+        fpos = self.order_id.fiscal_position_id
+        if self.env.uid == SUPERUSER_ID:
+            company_id = self.env.user.company_id.id
+            self.taxes_id = fpos.map_tax(self.product_id.supplier_taxes_id.filtered(lambda r: r.company_id.id == company_id))
+        else:
+            self.taxes_id = fpos.map_tax(self.product_id.supplier_taxes_id)
+
+        self._suggest_quantity()
+        self._onchange_quantity()
+
+        return result
+
+    @api.onchange('product_qty', 'product_uom')
+    def _onchange_quantity(self):
+        if not self.product_id:
+            return
 
         seller = self.product_id._select_seller(
             self.product_id,
@@ -581,17 +659,32 @@ class PurchaseOrderLine(models.Model):
             self.date_planned = self._get_date_planned(seller).strftime(DEFAULT_SERVER_DATETIME_FORMAT)
 
         if not seller:
-            return result
-
-        fpos = self.order_id.fiscal_position_id
-        self.taxes_id = fpos.map_tax(self.product_id.supplier_taxes_id)
+            return
 
         price_unit = self.env['account.tax']._fix_tax_included_price(seller.price, self.product_id.supplier_taxes_id, self.taxes_id) if seller else 0.0
         if price_unit and seller and self.order_id.currency_id and seller.currency_id != self.order_id.currency_id:
             price_unit = seller.currency_id.compute(price_unit, self.order_id.currency_id)
+
+        if seller and self.product_uom and seller.product_uom != self.product_uom:
+            price_unit = self.env['product.uom']._compute_price(seller.product_uom.id, price_unit, to_uom_id=self.product_uom.id)
+
         self.price_unit = price_unit
 
-        return result
+    def _suggest_quantity(self):
+        '''
+        Suggest a minimal quantity based on the seller
+        '''
+        if not self.product_id:
+            return
+
+        seller_min_qty = self.product_id.seller_ids\
+            .filtered(lambda r: r.name == self.order_id.partner_id)\
+            .sorted(key=lambda r: r.min_qty)
+        if seller_min_qty:
+            self.product_qty = seller_min_qty[0].min_qty or 1.0
+            self.product_uom = seller_min_qty[0].product_uom
+        else:
+            self.product_qty = 1.0
 
 
 class ProcurementRule(models.Model):
@@ -635,6 +728,9 @@ class ProcurementOrder(models.Model):
                     price_unit = self.env['account.tax']._fix_tax_included_price(seller.price, procurement.purchase_line_id.product_id.supplier_taxes_id, procurement.purchase_line_id.taxes_id) if seller else 0.0
                     if price_unit and seller and procurement.purchase_line_id.order_id.currency_id and seller.currency_id != procurement.purchase_line_id.order_id.currency_id:
                         price_unit = seller.currency_id.compute(price_unit, procurement.purchase_line_id.order_id.currency_id)
+
+                    if seller and seller.product_uom != procurement.product_uom:
+                        price_unit = self.env['product.uom']._compute_price(seller.product_uom.id, price_unit, to_uom_id=procurement.product_uom.id)
 
                 procurement.purchase_line_id.product_qty = product_qty
                 procurement.purchase_line_id.price_unit = price_unit
@@ -707,11 +803,16 @@ class ProcurementOrder(models.Model):
 
         taxes = self.product_id.supplier_taxes_id
         fpos = po.fiscal_position_id
-        taxes_id = fpos.map_tax(taxes).ids if fpos else []
+        taxes_id = fpos.map_tax(taxes) if fpos else taxes
+        if taxes_id:
+            taxes_id = taxes_id.filtered(lambda x: x.company_id.id == self.company_id.id)
 
         price_unit = self.env['account.tax']._fix_tax_included_price(seller.price, self.product_id.supplier_taxes_id, taxes_id) if seller else 0.0
         if price_unit and seller and po.currency_id and seller.currency_id != po.currency_id:
             price_unit = seller.currency_id.compute(price_unit, po.currency_id)
+
+        if seller and self.product_uom and seller.product_uom != self.product_uom:
+            price_unit = self.env['product.uom']._compute_price(seller.product_uom.id, price_unit, to_uom_id=self.product_uom.id)
 
         product_lang = self.product_id.with_context({
             'lang': supplier.name.lang,
@@ -730,7 +831,7 @@ class ProcurementOrder(models.Model):
             'product_uom': self.product_uom.id,
             'price_unit': price_unit,
             'date_planned': date_planned,
-            'taxes_id': [(6, 0, taxes_id)],
+            'taxes_id': [(6, 0, taxes_id.ids)],
             'procurement_ids': [(4, self.id)],
             'order_id': po.id,
         }
@@ -750,6 +851,7 @@ class ProcurementOrder(models.Model):
             'partner_id': partner.id,
             'picking_type_id': self.rule_id.picking_type_id.id,
             'company_id': self.company_id.id,
+            'currency_id': partner.property_purchase_currency_id.id or self.env.user.company_id.currency_id.id,
             'dest_address_id': self.partner_dest_id.id,
             'origin': self.origin,
             'payment_term_id': partner.property_supplier_payment_term_id.id,
@@ -763,17 +865,25 @@ class ProcurementOrder(models.Model):
         cache = {}
         res = []
         for procurement in self:
-            if not procurement.product_id.seller_ids:
+            suppliers = procurement.product_id.seller_ids.filtered(lambda r: not r.product_id or r.product_id == procurement.product_id)
+            if not suppliers:
                 procurement.message_post(body=_('No vendor associated to product %s. Please set one to fix this procurement.') % (procurement.product_id.name))
                 continue
-            supplier = procurement.product_id.seller_ids[0]
+            supplier = suppliers[0]
             partner = supplier.name
+
+            gpo = procurement.rule_id.group_propagation_option
+            group = (gpo == 'fixed' and procurement.rule_id.group_id) or \
+                    (gpo == 'propagate' and procurement.group_id) or False
+
             domain = (
                 ('partner_id', '=', partner.id),
                 ('state', '=', 'draft'),
                 ('picking_type_id', '=', procurement.rule_id.picking_type_id.id),
                 ('company_id', '=', procurement.company_id.id),
                 ('dest_address_id', '=', procurement.partner_dest_id.id))
+            if group:
+                domain += (('group_id', '=', group.id),)
 
             if domain in cache:
                 po = cache[domain]
@@ -785,6 +895,12 @@ class ProcurementOrder(models.Model):
                 vals = procurement._prepare_purchase_order(partner)
                 po = self.env['purchase.order'].create(vals)
                 cache[domain] = po
+            elif not po.origin or procurement.origin not in po.origin.split(', '):
+                # Keep track of all procurements
+                if po.origin:
+                    po.write({'origin': po.origin + ', ' + procurement.origin})
+                else:
+                    po.write({'origin': procurement.origin})
             res += po.ids
 
             # Create Line
@@ -802,11 +918,15 @@ class ProcurementOrder(models.Model):
                     if price_unit and seller and po.currency_id and seller.currency_id != po.currency_id:
                         price_unit = seller.currency_id.compute(price_unit, po.currency_id)
 
+                    if seller and self.product_uom and seller.product_uom != self.product_uom:
+                        price_unit = self.env['product.uom']._compute_price(seller.product_uom.id, price_unit, to_uom_id=self.product_uom.id)
+
                     po_line = line.write({
                         'product_qty': line.product_qty + procurement.product_qty,
                         'price_unit': price_unit,
                         'procurement_ids': [(4, procurement.id)]
                     })
+                    break
             if not po_line:
                 vals = procurement._prepare_purchase_order_line(po, supplier)
                 self.env['purchase.order.line'].create(vals)
