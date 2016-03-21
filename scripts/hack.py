@@ -7,16 +7,16 @@ migrations = {
                 'type': 'link',
                 'url': os.path.join('server', 'addons'),
             },
-            # 'mic_shared': {
-            #     'type': 'git',
-            #     'url': 'git@github.com:microcom/mic-shared.git',
-            #     'branch': '9.0-fix-referral',
-            # },
-            # 'mic': {
-            #     'type': 'git',
-            #     'url': 'git@github.com:microcom/mic.git',
-            #     'branch': '9.0-migrate',
-            # },
+            'mic_shared': {
+                'type': 'git',
+                'url': 'git@github.com:microcom/mic-shared.git',
+                'branch': '9.0-migration-hack',
+            },
+            'mic': {
+                'type': 'git',
+                'url': 'git@github.com:microcom/mic.git',
+                'branch': '9.0-migrate',
+            },
         },
         'server': {
             'type': 'git',
