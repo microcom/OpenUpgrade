@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 
 import os
 import sys
@@ -190,13 +190,6 @@ parser.add_option(
     "['new_dependency1', 'new_dependency2']}\"")
 (options, args) = parser.parse_args()
 
-if not options.config or not options.migrations\
-        or not reduce(lambda a, b: a and (b in migrations),
-                      options.migrations.split(','),
-                      True):
-    parser.print_help()
-    sys.exit()
-
 config.read(options.config)
 
 conn_parms = {}
@@ -256,6 +249,13 @@ if options.add:
         return result
 
     migrations = deep_update(migrations, merge_migrations)
+
+if not options.config or not options.migrations\
+        or not reduce(lambda a, b: a and (b in migrations),
+                      options.migrations.split(','),
+                      True):
+    parser.print_help()
+    sys.exit()
 
 for version in options.migrations.split(','):
     if version not in migrations:
