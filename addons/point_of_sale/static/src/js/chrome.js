@@ -443,6 +443,8 @@ var Chrome = PosBaseWidget.extend({
         this.logo_click_time  = 0;
         this.logo_click_count = 0;
 
+            this.previous_touch_y_coordinate = -1;
+
         this.widget = {};   // contains references to subwidgets instances
 
         this.cleanup_dom();
@@ -476,8 +478,6 @@ var Chrome = PosBaseWidget.extend({
     build_chrome: function() { 
         var self = this;
         FastClick.attach(document.body);
-        core.bus.trigger('set_full_screen', true);
-
         this.renderElement();
 
         this.$('.pos-logo').click(function(){
@@ -537,12 +537,40 @@ var Chrome = PosBaseWidget.extend({
         }
     },
 
+        _scrollable: function(element, scrolling_down){
+            var $element = $(element);
+            var scrollable = true;
+
+            if (! scrolling_down && $element.scrollTop() <= 0) {
+                scrollable = false;
+            } else if (scrolling_down && $element.scrollTop() + $element.height() >= element.scrollHeight) {
+                scrollable = false;
+            }
+
+            return scrollable;
+        },
+
     disable_rubberbanding: function(){
+            var self = this;
+
+            document.body.addEventListener('touchstart', function(event){
+                self.previous_touch_y_coordinate = event.touches[0].clientY;
+            });
+
         // prevent the pos body from being scrollable. 
         document.body.addEventListener('touchmove',function(event){
             var node = event.target;
+                var current_touch_y_coordinate = event.touches[0].clientY;
+                var scrolling_down;
+
+                if (current_touch_y_coordinate < self.previous_touch_y_coordinate) {
+                    scrolling_down = true;
+                } else {
+                    scrolling_down = false;
+                }
+
             while(node){
-                if(node.classList && node.classList.contains('touch-scrollable')){
+                if(node.classList && node.classList.contains('touch-scrollable') && self._scrollable(node, scrolling_down)){
                     return;
                 }
                 node = node.parentNode;
@@ -722,14 +750,19 @@ var Chrome = PosBaseWidget.extend({
 
     destroy: function() {
         this.pos.destroy();
-        core.bus.trigger('set_full_screen', false);
         this._super();
     }
 });
 
 return {
     Chrome: Chrome,
+    DebugWidget: DebugWidget,
+    HeaderButtonWidget: HeaderButtonWidget,
     OrderSelectorWidget: OrderSelectorWidget,
+    ProxyStatusWidget: ProxyStatusWidget,
+    StatusWidget: StatusWidget,
+    SynchNotificationWidget: SynchNotificationWidget,
+    UsernameWidget: UsernameWidget,
 };
 });
 

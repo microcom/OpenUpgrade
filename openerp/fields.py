@@ -12,6 +12,7 @@ import logging
 import pytz
 import xmlrpclib
 
+from openerp.sql_db import LazyCursor
 from openerp.tools import float_round, frozendict, html_sanitize, ustr, OrderedSet
 from openerp.tools import DEFAULT_SERVER_DATE_FORMAT as DATE_FORMAT
 from openerp.tools import DEFAULT_SERVER_DATETIME_FORMAT as DATETIME_FORMAT
@@ -40,6 +41,20 @@ class FailedValue(SpecialValue):
 def _check_value(value):
     """ Return ``value``, or call its getter if ``value`` is a :class:`SpecialValue`. """
     return value.get() if isinstance(value, SpecialValue) else value
+
+def copy_cache(records, env):
+    """ Recursively copy the cache of ``records`` to the environment ``env``. """
+    todo, done = set(records), set()
+    while todo:
+        record = todo.pop()
+        if record not in done:
+            done.add(record)
+            target = record.with_env(env)
+            for name, value in record._cache.iteritems():
+                if isinstance(value, BaseModel):
+                    todo.update(value)
+                    value = value.with_env(env)
+                target._cache[name] = value
 
 
 def resolve_mro(model, name, predicate):
@@ -422,6 +437,10 @@ class Field(object):
             # by default, related fields are not stored and not copied
             attrs['store'] = attrs.get('store', False)
             attrs['copy'] = attrs.get('copy', False)
+        if attrs.get('company_dependent'):
+            # by default, company-dependent fields are not stored and not copied
+            attrs['store'] = attrs.get('store', False)
+            attrs['copy'] = attrs.get('copy', False)
 
         # fix for function fields overridden by regular columns
         if not isinstance(attrs.get('origin'), (NoneType, fields.function)):
@@ -560,8 +579,10 @@ class Field(object):
         # when related_sudo, bypass access rights checks when reading values
         others = records.sudo() if self.related_sudo else records
         for record, other in zip(records, others):
-            # do not switch to another environment if record is a draft one
-            other, field = self.traverse_related(other if record.id else record)
+            if not record.id and record.env != other.env:
+                # draft records: copy record's cache to other's cache first
+                copy_cache(record, other.env)
+            other, field = self.traverse_related(other)
             record[self.name] = other[field.name]
 
     def _inverse_related(self, records):
@@ -682,7 +703,7 @@ class Field(object):
         if self.column:
             return self.column
 
-        if not self.store and (self.compute or not self.origin):
+        if not self.store and (self.compute or not self.origin) and not self.company_dependent:
             # non-stored computed fields do not have a corresponding column
             return None
 
@@ -1071,7 +1092,7 @@ class Float(Field):
     @property
     def digits(self):
         if callable(self._digits):
-            with fields._get_cursor() as cr:
+            with LazyCursor() as cr:
                 return self._digits(cr)
         else:
             return self._digits
@@ -1088,6 +1109,8 @@ class Float(Field):
     def convert_to_cache(self, value, record, validate=True):
         # apply rounding here, otherwise value in cache may be wrong!
         value = float(value or 0.0)
+        if not validate:
+            return value
         digits = self.digits
         return float_round(value, precision_digits=digits[1]) if digits else value
 
@@ -1721,7 +1744,8 @@ class _RelationalMulti(_Relational):
         elif isinstance(value, list):
             # value is a list of record ids or commands
             comodel = record.env[self.comodel_name]
-            ids = OrderedSet(record[self.name].ids)
+            # determine the value ids; by convention empty on new records
+            ids = OrderedSet(record[self.name].ids if record.id else ())
             # modify ids with the commands
             for command in value:
                 if isinstance(command, (tuple, list)):
@@ -1858,6 +1882,12 @@ class One2many(_RelationalMulti):
     _column_auto_join = property(attrgetter('auto_join'))
     _column_limit = property(attrgetter('limit'))
 
+    def convert_to_onchange(self, value, fnames=None):
+        if fnames:
+            # do not serialize self's inverse field
+            fnames = [name for name in fnames if name != self.inverse_name]
+        return super(One2many, self).convert_to_onchange(value, fnames)
+
 
 class Many2many(_RelationalMulti):
     """ Many2many field; the value of such a field is the recordset.
@@ -1971,7 +2001,7 @@ class Id(Field):
         raise TypeError("field 'id' cannot be assigned")
 
 # imported here to avoid dependency cycle issues
-from openerp import SUPERUSER_ID, registry
+from openerp import SUPERUSER_ID
 from .exceptions import Warning, AccessError, MissingError
 from .models import check_pg_name, BaseModel, MAGIC_COLUMNS
 from .osv import fields
