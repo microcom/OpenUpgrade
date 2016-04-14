@@ -39,7 +39,20 @@ column_renames = {
     'project_project': [
         ('state', None),
     ],
+    'project_category_project_task_rel': [
+        ('project_category_id', 'project_tag_id'),
+    ],
+    'project_category_project_issue_rel': [
+        ('project_category_id', 'project_tag_id'),
+    ],
 }
+
+TABLE_RENAMES = [
+    ('project_category', 'project_tags'),
+    ('project_category_project_task_rel', 'project_tags_project_task_rel'),
+    ('project_category_project_issue_rel', 'project_tags_project_issue_rel'),
+    ]
+
 
 column_drops = [('project_config_settings', 'module_sale_service'),
                 ('project_config_settings', 'module_pad'),
@@ -53,8 +66,7 @@ column_drops = [('project_config_settings', 'module_sale_service'),
 def migrate(cr, version):
     openupgrade.copy_columns(cr, column_copies)
     openupgrade.rename_columns(cr, column_renames)
-    openupgrade.rename_tables(
-        cr, [('project_category', 'project_tags')])
+    openupgrade.rename_tables(cr, TABLE_RENAMES)
     if openupgrade.column_exists(cr, 'project_project', 'members'):
         openupgrade.rename_columns(cr, {'project_project': [('members', None)]})
     # Removing transient tables to get rid of warnings
