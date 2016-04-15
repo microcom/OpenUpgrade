@@ -23,13 +23,14 @@ from openupgradelib import openupgrade
 
 
 column_renames = {
-    'project_tags_project_issue_rel': [
+    'project_issue_project_tags_rel': [
         ('project_category_id', 'project_tags_id'),
     ],
 }
 
 table_renames = [
-    ('project_category_project_issue_rel', 'project_tags_project_issue_rel'),
+    # rel table named in alphabetical order
+    ('project_category_project_issue_rel', 'project_issue_project_tags_rel'),
     ]
 
 
