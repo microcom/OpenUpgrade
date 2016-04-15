@@ -39,10 +39,10 @@ column_renames = {
     ],
     # rename table and key
     'project_tags_project_task_rel': [
-        ('project_category_id', 'project_tag_id'),
+        ('project_category_id', 'project_tags_id'),
     ],
     'project_tags_project_issue_rel': [
-        ('project_category_id', 'project_tag_id'),
+        ('project_category_id', 'project_tags_id'),
     ],
 }
 
