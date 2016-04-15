@@ -38,10 +38,10 @@ column_renames = {
         ('reviewer_id', None),
     ],
     # rename table and key
-    'project_category_project_task_rel': [
+    'project_tags_project_task_rel': [
         ('project_category_id', 'project_tag_id'),
     ],
-    'project_category_project_issue_rel': [
+    'project_tags_project_issue_rel': [
         ('project_category_id', 'project_tag_id'),
     ],
 }
@@ -65,8 +65,8 @@ column_drops = [
 @openupgrade.migrate()
 def migrate(cr, version):
     openupgrade.copy_columns(cr, column_copies)
-    openupgrade.rename_columns(cr, column_renames)
     openupgrade.rename_tables(cr, table_renames)
+    openupgrade.rename_columns(cr, column_renames)
     if openupgrade.column_exists(cr, 'project_project', 'members'):
         openupgrade.rename_columns(cr, {'project_project': [('members', None)]})
     # Removing transient tables to get rid of warnings
