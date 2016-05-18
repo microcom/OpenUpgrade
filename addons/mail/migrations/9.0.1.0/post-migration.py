@@ -34,6 +34,20 @@ def remove_obsolete_modules(cr, modules_to_remove):
     ir_module_module.module_uninstall(cr, SUPERUSER_ID, ids)
 
 
+def patch_mails(cr):
+    openupgrade.logged_query(cr, """
+        INSERT INTO mail_message_res_partner_needaction_rel
+        SELECT message_id AS mail_message_id, partner_id AS res_partner_id FROM mail_notification
+        WHERE not is_read
+        """)
+    openupgrade.logged_query(cr, """
+        INSERT INTO mail_message_res_partner_starred_rel
+        SELECT message_id AS mail_message_id, partner_id AS res_partner_id FROM mail_notification
+        WHERE starred
+        """)
+
+
 @openupgrade.migrate()
 def migrate(cr, version):
     remove_obsolete_modules(cr, ('email_template',))
+    patch_mails(cr)

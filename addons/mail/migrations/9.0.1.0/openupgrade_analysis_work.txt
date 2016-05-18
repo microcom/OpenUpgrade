@@ -26,9 +26,13 @@ mail         / mail.channel.partner     / seen_message_id (many2one)    : NEW re
 mail         / mail.followers           / channel_id (many2one)         : NEW relation: mail.channel
 mail         / mail.mail                / failure_reason (text)         : NEW 
 mail         / mail.message             / channel_ids (many2many)       : NEW relation: mail.channel
+# Nothing to do
+
 mail         / mail.message             / needaction_partner_ids (many2many): NEW relation: res.partner
 mail         / mail.message             / notification_ids (one2many)   : DEL relation: mail.notification
 mail         / mail.message             / notified_partner_ids (many2many): DEL relation: res.partner
+# TODO - transfer notified_partner_ids to needaction_partner_ids
+
 mail         / mail.message             / starred_partner_ids (many2many): NEW relation: res.partner
 mail         / mail.message             / tracking_value_ids (one2many) : NEW relation: mail.tracking.value
 mail         / mail.message             / type (selection)              : now required, default = email
