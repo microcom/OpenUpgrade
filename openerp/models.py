@@ -759,7 +759,8 @@ class BaseModel(object):
                 attrs['column2'] = field['column2'] or col2
                 attrs['domain'] = eval(field['domain']) if field['domain'] else None
             # add compute function if given
-            if field['compute']:
+            # SLC - no compute key
+            if field.get('compute'):
                 attrs['compute'] = make_compute(field['compute'], field['depends'])
             self._add_field(name, Field.by_type[field['ttype']](**attrs))
 
