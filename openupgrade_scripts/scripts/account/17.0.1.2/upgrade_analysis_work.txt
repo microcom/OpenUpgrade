@@ -123,10 +123,10 @@ account      / account.move             / amount_total_words (char)     : previo
 # NOTHING TO DO: compute no store
 
 account      / account.move             / delivery_date (date)          : NEW isfunction: function, stored
-# DONE pre-migration: Create column then in module need them like l10n_de and sale_stock will fill value, https://github.com/odoo/odoo/pull/116643
+# NOTHING TO DO
 
 account      / account.move             / incoterm_location (char)      : NEW hasdefault: compute
-# DONE pre-migration: Create column then in sale_stock, purchase_stock will fill it in pre, pr: https://github.com/odoo/odoo/pull/118954
+# NOTHING TO DO
 
 account      / account.move             / invoice_pdf_report_file (binary): NEW attachment: True
 # DONE post-migration: update message_main_attachment_id with res_field and res_id of each invoice, see '_link_invoice_documents' in 'account.move.send'
