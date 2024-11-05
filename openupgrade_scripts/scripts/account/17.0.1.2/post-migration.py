@@ -368,13 +368,12 @@ def _account_payment_term_migration(env):
         """
         UPDATE account_payment_term_line
         SET delay_type = CASE
-                WHEN end_month = true AND months = 1
-                    THEN 'days_after_end_of_next_month'
-                WHEN end_month = true AND COALESCE(months, 0) = 0 AND days_after > 0
-                    THEN 'days_end_of_month_on_the'
                 WHEN end_month = true AND COALESCE(months, 0) = 0
+                  AND COALESCE(days, 0) = 0
                     THEN 'days_after_end_of_month'
-                WHEN end_month = true AND months > 1
+                WHEN end_month = true AND months = 1 AND COALESCE(days, 0) = 0
+                    THEN 'days_after_end_of_next_month'
+                WHEN end_month = true AND COALESCE(months, 0) <= 1 AND days > 0
                     THEN 'days_end_of_month_on_the'
                 ELSE 'days_after'
             END,
@@ -459,7 +458,9 @@ def _force_install_account_payment_term_module_module(env):
             env.cr,
             """
             UPDATE account_payment_term_line
-            SET nb_days = nb_days - days_after
+            SET
+            nb_days = nb_days - days_after,
+            days_next_month = days_after
             WHERE delay_type = 'days_end_of_month_on_the'
             """,
         )
