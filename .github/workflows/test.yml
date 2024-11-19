@@ -141,9 +141,16 @@ jobs:
               --db_port=$DB_PORT \
               --db_user=$DB_USERNAME \
               --load=base,web,openupgrade_framework \
+<<<<<<< HEAD
               --test-enable \
               --test-tags openupgrade \
               --log-handler odoo.models.unlink:WARNING \
+||||||| b2f4cfe3f6f
+              --log-handler odoo.models.unlink:WARNING \
+              --test-enable \
+=======
+              --log-handler odoo.models.unlink:WARNING \
+>>>>>>> 17.0_ou_account_edi
               --stop-after-init \
               --without-demo=$MODULES_NEW \
               --update=$MODULES_NEW
