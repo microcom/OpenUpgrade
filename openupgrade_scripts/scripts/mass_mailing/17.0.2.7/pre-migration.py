@@ -9,6 +9,6 @@ def migrate(env, version):
     openupgrade.delete_sql_constraint_safely(
         env,
         "mass_mailing",
-        "constraint_mailing_contact_list_rel",
+        "mailing_contact_list_rel",
         "unique_contact_list",
     )
