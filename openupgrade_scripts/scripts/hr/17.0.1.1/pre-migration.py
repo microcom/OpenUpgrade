@@ -143,8 +143,26 @@ def _hr_work_location_fill_location_type(env):
     )
 
 
+def _remove_address_home_id_from_tracking(env):
+    """
+    Remove traces related to the 'address_home_id' field in mail_tracking_value.
+    """
+    openupgrade.logged_query(
+        env.cr,
+        """
+        DELETE FROM mail_tracking_value
+        WHERE field_id IN (
+            SELECT id
+            FROM ir_model_fields
+            WHERE name = 'address_home_id' AND model = 'hr.employee'
+        );
+        """,
+    )
+
+
 @openupgrade.migrate()
 def migrate(env, version):
+    _remove_address_home_id_from_tracking(env)
     _hr_plan_sync_to_mail_activity_plan(env)
     openupgrade.rename_xmlids(env.cr, _xmlids_renames)
     _employee_sync_address_home_id(env)
